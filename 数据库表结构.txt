@@ -1,0 +1,113 @@
+-- ============================================
+-- TagTime 数据库表结构
+-- 数据库：MySQL 8.0 / PostgreSQL
+-- ============================================
+
+-- 1. 用户表
+CREATE TABLE `users` (
+    `id` BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT COMMENT '用户ID',
+    `username` VARCHAR(64) NOT NULL UNIQUE COMMENT '用户名',
+    `email` VARCHAR(128) NOT NULL UNIQUE COMMENT '邮箱',
+    `password_hash` VARCHAR(128) NOT NULL COMMENT '密码哈希',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    INDEX `idx_username` (`username`),
+    INDEX `idx_email` (`email`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户表';
+
+-- 2. 标签表
+CREATE TABLE `tags` (
+    `id` BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT COMMENT '标签ID',
+    `user_id` BIGINT UNSIGNED NOT NULL COMMENT '所属用户ID',
+    `name` VARCHAR(64) NOT NULL COMMENT '标签名称',
+    `color` VARCHAR(16) NOT NULL DEFAULT '#4a90e2' COMMENT '标签颜色（十六进制）',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE,
+    INDEX `idx_user_id` (`user_id`),
+    UNIQUE KEY `uk_user_tag` (`user_id`, `name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='标签表';
+
+-- 3. 便签表（已新增图片字段）
+CREATE TABLE `notes` (
+    `id` BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT COMMENT '便签ID',
+    `user_id` BIGINT UNSIGNED NOT NULL COMMENT '所属用户ID',
+    `content` TEXT NOT NULL COMMENT '便签内容（支持Markdown）',
+    `images` JSON DEFAULT NULL COMMENT '图片地址数组，存储格式：["url1", "url2", "url3"]',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间（即记录日期）',
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE,
+    INDEX `idx_user_id` (`user_id`),
+    INDEX `idx_created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='便签表';
+
+-- 4. 便签-标签关联表
+CREATE TABLE `note_tags` (
+    `note_id` BIGINT UNSIGNED NOT NULL COMMENT '便签ID',
+    `tag_id` BIGINT UNSIGNED NOT NULL COMMENT '标签ID',
+    PRIMARY KEY (`note_id`, `tag_id`),
+    FOREIGN KEY (`note_id`) REFERENCES `notes`(`id`) ON DELETE CASCADE,
+    FOREIGN KEY (`tag_id`) REFERENCES `tags`(`id`) ON DELETE CASCADE,
+    INDEX `idx_tag_id` (`tag_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='便签-标签关联表';
+
+-- 5. 任务表
+CREATE TABLE `tasks` (
+    `id` BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT COMMENT '任务ID',
+    `user_id` BIGINT UNSIGNED NOT NULL COMMENT '所属用户ID',
+    `tag_id` BIGINT UNSIGNED NOT NULL COMMENT '关联标签ID（必须）',
+    `name` VARCHAR(128) NOT NULL COMMENT '任务名称',
+    `description` TEXT DEFAULT NULL COMMENT '任务描述',
+    `status` TINYINT NOT NULL DEFAULT 0 COMMENT '状态：0-未开始，1-进行中，2-已完成，3-已归档',
+    `total_duration` BIGINT NOT NULL DEFAULT 0 COMMENT '累计计时总时长（秒）',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    `completed_at` DATETIME DEFAULT NULL COMMENT '完成时间（status变为2时记录）',
+    `archived_at` DATETIME DEFAULT NULL COMMENT '归档时间（status变为3时记录）',
+    FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE,
+    FOREIGN KEY (`tag_id`) REFERENCES `tags`(`id`) ON DELETE RESTRICT,
+    INDEX `idx_user_id` (`user_id`),
+    INDEX `idx_tag_id` (`tag_id`),
+    INDEX `idx_status` (`status`),
+    INDEX `idx_created_at` (`created_at`),
+    INDEX `idx_archived_at` (`archived_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='任务表';
+
+-- 6. 计时记录表
+CREATE TABLE `time_entries` (
+    `id` BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT COMMENT '记录ID',
+    `task_id` BIGINT UNSIGNED NOT NULL COMMENT '所属任务ID',
+    `user_id` BIGINT UNSIGNED NOT NULL COMMENT '所属用户ID（冗余，便于查询）',
+    `start_time` DATETIME NOT NULL COMMENT '开始时间',
+    `end_time` DATETIME DEFAULT NULL COMMENT '结束时间',
+    `duration` INT NOT NULL DEFAULT 0 COMMENT '持续时长（秒）',
+    `paused_duration` INT NOT NULL DEFAULT 0 COMMENT '累计暂停时长（秒）',
+    `is_paused` TINYINT NOT NULL DEFAULT 0 COMMENT '是否暂停中：0-否，1-是',
+    `last_pause_time` DATETIME DEFAULT NULL COMMENT '最后一次暂停时间',
+    `timer_mode` VARCHAR(20) NOT NULL DEFAULT 'free' COMMENT '计时模式：free-自由计时，pomodoro-番茄钟',
+    `work_minutes` INT NOT NULL DEFAULT 25 COMMENT '番茄钟工作时长（分钟）',
+    `break_minutes` INT NOT NULL DEFAULT 5 COMMENT '番茄钟休息时长（分钟）',
+    `pomodoro_count` INT NOT NULL DEFAULT 0 COMMENT '番茄钟完成次数',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '记录创建时间',
+    FOREIGN KEY (`task_id`) REFERENCES `tasks`(`id`) ON DELETE CASCADE,
+    FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE,
+    INDEX `idx_task_id` (`task_id`),
+    INDEX `idx_user_id` (`user_id`),
+    INDEX `idx_start_time` (`start_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='计时记录表';
+
+-- ============================================
+-- 示例数据插入（可选）
+-- ============================================
+
+-- 插入测试用户
+-- INSERT INTO `users` (`username`, `email`, `password_hash`) 
+-- VALUES ('testuser', 'test@example.com', '$2a$10$...');
+
+-- 插入测试标签
+-- INSERT INTO `tags` (`user_id`, `name`, `color`) 
+-- VALUES (1, '工作', '#4a90e2'), (1, '学习', '#f5a623'), (1, '生活', '#50e3c2');
+
+-- 插入测试便签（包含图片）
+-- INSERT INTO `notes` (`user_id`, `content`, `images`) 
+-- VALUES (1, '今天的工作总结', '["https://example.com/img1.jpg", "https://example.com/img2.jpg"]');
